@@ -10,6 +10,7 @@ import paper, {
   PointText,
   Color,
   Rectangle,
+  Layer,
   Size,
   Raster,
 } from "paper"
@@ -51,6 +52,9 @@ class Canvas {
   stateIndex = -1
   handleChange = () => {}
   scale = 1
+  selectionStart = null;
+  selectionPath = null;
+  copiedItems = null;
 
   // Initialize the canvas with paper.js.
   init(element, modeStrokeWidth, onChange) {
@@ -383,7 +387,7 @@ class Canvas {
           that.pathGroup.scale(that.scale)
 
           // Initialize the path(s).
-          if (!that.toolProps.type || ["straight", "dashed", "dashed-straight", "waves", "waves-straight", "double"].includes(that.toolProps.type)) {
+          if (!that.toolProps.type || ["straight", "dashed", "dashed-straight", "waves", "waves-straight", "double", "dotted"].includes(that.toolProps.type)) {
             that.path1 = new Path({
               strokeColor: that.toolColor,
               strokeWidth: that.strokeWidth * that.scale,
@@ -393,6 +397,11 @@ class Canvas {
             if (["dashed", "dashed-straight"].includes(that.toolProps.type)) {
               that.path1.strokeCap = "round"
               that.path1.dashArray = [5 * that.scale, 7 * that.scale]
+            }
+
+            if (["dotted"].includes(that.toolProps.type)) {
+              that.path1.strokeCap = "round"
+              that.path1.dashArray = [1 * that.scale, 4 * that.scale]
             }
 
             if (["waves", "waves-straight"].includes(that.toolProps.type)) {
@@ -437,6 +446,7 @@ class Canvas {
           switch (that.toolProps.type) {
             case "straight":
             case "dashed-straight":
+            case "dotted":
               that.path1.removeSegments()
               that.path1.add(event.downPoint, event.point)
               break
@@ -858,23 +868,102 @@ class Canvas {
       },
     })
 
-    // Erase tool.
+    // Erase tool
     this.customTools.push({
       name: "erase",
       cursor: null,
       props: {
         onMouseMove: event => {
-          that.view.element.style.setProperty("cursor", that.getHitTestItem(event.point) ? "pointer" : null)
+          const hitResult = that.project.hitTest(event.point, {
+            fill: true,
+            stroke: true,
+            tolerance: 5
+          });
+          that.view.element.style.setProperty("cursor", hitResult ? "pointer" : null);
         },
-        onMouseUp: event => {
-          const item = that.getHitTestItem(event.point)
-          if (item) {
-            item.remove()
-            that.saveState()
+        onMouseDown: event => {
+          const hitResult = that.project.hitTest(event.point, {
+            fill: true,
+            stroke: true,
+            tolerance: 5
+          });
+
+          if (hitResult && hitResult.item) {
+            // Get the top-level parent item
+            let topItem = hitResult.item;
+            while (topItem.parent && !(topItem.parent instanceof Layer)) {
+              topItem = topItem.parent;
+            }
+            
+            // Force remove the item and its children
+            if (topItem.parent) {
+              topItem.parent.removeChildren(topItem.index, topItem.index + 1);
+            }
+            topItem.remove();
+            
+            // Save state immediately
+            that.saveState();
           }
-        },
-      },
-    })
+        }
+      }
+    });
+
+    // Copy tool
+    this.customTools.push({
+      name: "copy",
+      cursor: "copy",
+      props: {
+        onMouseDown: event => {
+          const hitResult = that.project.hitTest(event.point, {
+            fill: true,
+            stroke: true,
+            tolerance: 5
+          });
+
+          if (hitResult && hitResult.item) {
+            // Get the top-level parent item
+            let topItem = hitResult.item;
+            while (topItem.parent && !(topItem.parent instanceof Layer)) {
+              topItem = topItem.parent;
+            }
+            
+            // Store a completely new copy
+            const cleanCopy = topItem.clone({ insert: false });  // Don't insert into project
+            cleanCopy.data = { ...topItem.data, isClone: true };  // Mark as a clone
+            that.copiedItems = [cleanCopy];
+            
+            // Visual feedback
+            const feedback = topItem.clone();
+            feedback.opacity = 0.5;
+            setTimeout(() => feedback.remove(), 300);
+          }
+        }
+      }
+    });
+
+    // Paste tool
+    this.customTools.push({
+      name: "paste",
+      cursor: "pointer",
+      props: {
+        onMouseDown: event => {
+          if (that.copiedItems && that.copiedItems.length > 0) {
+            const group = new Group();
+            
+            that.copiedItems.forEach(item => {
+              const pastedItem = item.clone();
+              pastedItem.position = event.point;
+              pastedItem.data = { ...item.data, isPasted: true };  // Mark as pasted
+              group.addChild(pastedItem);
+            });
+            
+            that.pathGroup = group;
+            that.paintItem(that.pathGroup);
+            that.saveState();
+          }
+        }
+      }
+    });
   }
 
 }
