@@ -9,9 +9,9 @@
     .container {
       max-width: 1200px;
     }
-    #form-submit {
-      display: flex;
-      margin: 2rem auto 0;
+
+    .hidden {
+      display: none;
     }
   </style>
 </head>
@@ -19,13 +19,13 @@
   <div class="container">
     <form id="form">
       <div id="drill-maker" data-on-change="handleChange"></div>
-      <button type="submit" id="form-submit">Submit Wrapper Form</button>
+      <button type="submit" id="form-submit" class="hidden">Submit Wrapper Form</button>
     </form>
   </div>
 
-  <hr class="mt-5 mb-4">
+ 
 
-  <div class="container">
+  <div class="container hidden">
     <div class="mb-3">
       <label for="image">Generated image</label>
       <img id="image" src="" class="img-fluid" />
