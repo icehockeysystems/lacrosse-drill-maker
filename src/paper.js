@@ -588,6 +588,70 @@ class Canvas {
       },
     })
 
+    // Dot tool.
+    this.customTools.push({
+      name: "dot",
+      cursor: "icon",
+      props: {
+        onMouseUp: event => {
+          const dotItem = new Path.Circle({
+            position: event.point,
+            center: new Point(0, 0),
+            radius: that.toolProps.radius || 3,
+            fillColor: that.toolColor,
+            strokeWidth: 1,
+            strokeColor: new Color(255, 255, 255, .5),
+            data: {skipStroke: true},
+          })
+          that.pathGroup = new Group({
+            children: [dotItem],
+            data: {
+              tool: "dot",
+              radius: that.toolProps.radius,
+              count: that.toolProps.count,
+            },
+          })
+
+          if (that.toolProps.count > 1) {
+            for (var i = 1; i < that.toolProps.count; i++) {
+              let dotItem2 = dotItem.clone()
+              const offset1 = (i % 2) === 0 ? 15 : -15
+              const offset2 = (i % 3) === 0 || (i % 4) === 0 ? 15 : -15
+              dotItem2.position = event.point.add(new Point(Math.random() * offset1, Math.random() * offset2))
+              that.pathGroup.addChild(dotItem2)
+            }
+          }
+
+          that.pathGroup.scale(that.scale)
+          that.saveState()
+        },
+      },
+    })
+
+    // SVG tool.
+    this.customTools.push({
+      name: "svg",
+      cursor: "icon",
+      props: {
+        onMouseUp: event => {
+          const size = that.toolProps.size || 30
+          const svgItem = that.project.importSVG(that.toolIcon)
+          svgItem.bounds = new Rectangle(event.point.subtract(size / 2), new Size(size, size))
+          that.pathGroup = new Group({
+            children: [svgItem],
+            data: {
+              tool: "svg",
+              id: that.toolProps.id,
+              size: that.toolProps.size,
+            },
+          })
+          that.pathGroup.scale(that.scale)
+          that.paintItem(that.pathGroup)
+          that.saveState()
+        },
+      },
+    })
+
     // Text tool.
     this.customTools.push({
       name: "text",
@@ -627,6 +691,89 @@ class Canvas {
             })
             that.pathGroup.scale(that.scale)
             that.paintItem(that.pathGroup, color)
+            that.saveState()
+          }
+        },
+      },
+    })
+
+    // Shape tool.
+    this.customTools.push({
+      name: "shape",
+      cursor: "crosshair",
+      props: {
+        onMouseDown: event => {
+          that.pathGroup = new Group({data: {
+            tool: "shape",
+            shape: that.toolProps.shape,
+            background: that.toolProps.background,
+            opacity: that.toolProps.opacity,
+            bordered: that.toolProps.bordered,
+          }})
+
+          // Place below other objects, just above the background item.
+          if (that.toolProps.background) {
+            that.pathGroup.insertAbove(that.project.activeLayer.children.background)
+          }
+        },
+        onMouseDrag: event => {
+          that.pathGroup.removeChildren()
+
+          // Rectangle.
+          if (that.toolProps.shape === "rectangle") {
+            that.pathGroup.addChild(new Path.Rectangle({
+              from: event.downPoint,
+              to: event.point,
+              fillColor: that.toolProps.bordered ? null : that.toolColor,
+              opacity: that.toolProps.opacity || 1,
+              strokeWidth: that.toolProps.bordered ? that.strokeWidth * that.scale : 0,
+              strokeColor: that.toolProps.bordered ? that.toolColor : null,
+            }))
+          }
+
+          // Circle.
+          else if (that.toolProps.shape === "circle") {
+            that.pathGroup.addChild(new Path.Circle({
+              center: event.downPoint,
+              radius: event.point.subtract(event.downPoint).length,
+              fillColor: that.toolProps.bordered ? null : that.toolColor,
+              opacity: that.toolProps.opacity || 1,
+              strokeWidth: that.toolProps.bordered ? that.strokeWidth * that.scale : 0,
+              strokeColor: that.toolProps.bordered ? that.toolColor : null,
+            }))
+          }
+
+          // Triangle.
+          else if (that.toolProps.shape === "triangle") {
+            that.pathGroup.addChild(new Path.RegularPolygon({
+              center: event.downPoint,
+              sides: 3,
+              radius: event.point.subtract(event.downPoint).length,
+              fillColor: that.toolProps.bordered ? null : that.toolColor,
+              opacity: that.toolProps.opacity || 1,
+              strokeWidth: that.toolProps.bordered ? that.strokeWidth * that.scale : 0,
+              strokeColor: that.toolProps.bordered ? that.toolColor : null,
+            }))
+          }
+        },
+        onMouseUp: event => {
+          that.saveState()
+        },
+      },
+    })
+
+    // Paint tool.
+    this.customTools.push({
+      name: "paint",
+      cursor: null,
+      props: {
+        onMouseMove: event => {
+          that.view.element.style.setProperty("cursor", that.getHitTestItem(event.point) ? "pointer" : null)
+        },
+        onMouseUp: event => {
+          const item = that.getHitTestItem(event.point)
+          if (item) {
+            that.paintItem(item)
             that.saveState()
           }
         },
@@ -720,6 +867,103 @@ class Canvas {
         },
       },
     })
+
+    // Erase tool
+    this.customTools.push({
+      name: "erase",
+      cursor: null,
+      props: {
+        onMouseMove: event => {
+          const hitResult = that.project.hitTest(event.point, {
+            fill: true,
+            stroke: true,
+            tolerance: 5
+          });
+          that.view.element.style.setProperty("cursor", hitResult ? "pointer" : null);
+        },
+        onMouseDown: event => {
+          const hitResult = that.project.hitTest(event.point, {
+            fill: true,
+            stroke: true,
+            tolerance: 5
+          });
+
+          if (hitResult && hitResult.item) {
+            // Get the top-level parent item
+            let topItem = hitResult.item;
+            while (topItem.parent && !(topItem.parent instanceof Layer)) {
+              topItem = topItem.parent;
+            }
+            
+            // Force remove the item and its children
+            if (topItem.parent) {
+              topItem.parent.removeChildren(topItem.index, topItem.index + 1);
+            }
+            topItem.remove();
+            
+            // Save state immediately
+            that.saveState();
+          }
+        }
+      }
+    });
+
+    // Copy tool
+    this.customTools.push({
+      name: "copy",
+      cursor: "copy",
+      props: {
+        onMouseDown: event => {
+          const hitResult = that.project.hitTest(event.point, {
+            fill: true,
+            stroke: true,
+            tolerance: 5
+          });
+
+          if (hitResult && hitResult.item) {
+            // Get the top-level parent item
+            let topItem = hitResult.item;
+            while (topItem.parent && !(topItem.parent instanceof Layer)) {
+              topItem = topItem.parent;
+            }
+            
+            // Store a completely new copy
+            const cleanCopy = topItem.clone({ insert: false });  // Don't insert into project
+            cleanCopy.data = { ...topItem.data, isClone: true };  // Mark as a clone
+            that.copiedItems = [cleanCopy];
+            
+            // Visual feedback
+            const feedback = topItem.clone();
+            feedback.opacity = 0.5;
+            setTimeout(() => feedback.remove(), 300);
+          }
+        }
+      }
+    });
+
+    // Paste tool
+    this.customTools.push({
+      name: "paste",
+      cursor: "pointer",
+      props: {
+        onMouseDown: event => {
+          if (that.copiedItems && that.copiedItems.length > 0) {
+            const group = new Group();
+            
+            that.copiedItems.forEach(item => {
+              const pastedItem = item.clone();
+              pastedItem.position = event.point;
+              pastedItem.data = { ...item.data, isPasted: true };  // Mark as pasted
+              group.addChild(pastedItem);
+            });
+            
+            that.pathGroup = group;
+            that.paintItem(that.pathGroup);
+            that.saveState();
+          }
+        }
+      }
+    });
   }
 
 }
